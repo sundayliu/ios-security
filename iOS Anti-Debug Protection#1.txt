@@ -1,0 +1,114 @@
+#1
+Using ptrace with PT_DENY_ATTACH
+int ptrace(int request, pid_t pid, caddr_t addr, int data);
+
+int main(int argc, char **argv)
+{
+    ptrace(PT_DENY_ATTACH, 0, 0, 0);
+    printf("Try to attach to me!");
+    while (1)
+    {
+        sleep(1);
+        printf(".");
+        fflush(stdout);
+    }
+    return 0;
+}
+
+======================
+tl0gic:~ mobile$ ./ptrace
+Try to attach to me!........
+------------------------
+Now we try to attach with GDB:
+
+tl0gic:~ mobile$ ps ax | grep ptrace
+2761 s000 S+ 0:00.05 ./ptrace
+2774 s001 R+ 0:00.01 grep ptrace
+tl0gic:~ mobile$ gdb -p 2761
+/private/var/mobile/2761: No such file or directory
+Attaching to process 2761.
+Segmentation fault: 11
+tl0gic:~ mobile$
+
+------------------------
+tl0gic:~ mobile$ gdb ./ptrace
+Reading symbols for shared libraries . done
+(gdb) run
+Starting program: /private/var/mobile/ptrace
+Reading symbols for shared libraries ...................... done
+  
+Program exited with code 055.
+(gdb)
+
+- Bypassing ptrace
+
+Method 1 ¨C modifying the arguments to ptrace
+$ gdb ./ptrace
+Then, setup a breakpoint on ptrace:
+(gdb) break ptrace
+Function "ptrace" not defined.
+Make breakpoint pending on future shared library load? (y or [n]) y
+  
+Breakpoint 1 (ptrace) pending.
+
+--------------
+Starting program: /private/var/mobile/ptrace
+Reading symbols for shared libraries ...................... done
+Breakpoint 1 at 0x30e6f3a8
+Pending breakpoint 1 - "ptrace" resolved
+  
+Breakpoint 1, 0x30e6f3a8 in ptrace ()
+(gdb)
+
+(gdb) info registers r0 r1 r2 r3
+r0 0x1f 31
+r1 0x0 0
+r2 0x0 0
+r3 0x0 0
+
+(gdb) set $r0=-1
+(gdb) continue
+Continuing.
+Try to attach to me!.....
+
+Method 2 - memory patch
+$ otool -tV ./ptrace
+  
+00002f20 4610 cpy r0, r2
+00002f22 4619 cpy r1, r3
+00002f24 461a cpy r2, r3
+00002f26 e868f000 blx 0x2ff8 ; symbol stub for: _ptrace
+00002f2a 019ef240 blx 0x243268
+00002f2e 0100f2c0 blx 0x2c3130
+00002f32 4479 add r1, pc
+
+NOP 0xbf00
+
+tl0gic:~ mobile$ gdb ./ptrace
+Reading symbols for shared libraries . done
+(gdb) x/5i 0x2f26
+0x2f26 : blx 0x2ff8
+0x2f2a : movw r1, #158 ; 0x9e
+0x2f2e : movt r1, #0 ; 0x0
+0x2f32 : add r1, pc
+0x2f34 : str r0, [sp, #16]
+
+(gdb) b main
+Breakpoint 1 at 0x2f0e
+(gdb) run
+Starting program: /private/var/mobile/ptrace
+Reading symbols for shared libraries ...................... done
+  
+Breakpoint 1, 0x00002f0e in main ()
+
+(gdb) set *(long *)0x2f26 = 0xbf00bf00
+
+(gdb) x/5i 0x2f26
+0x2f26 : nop
+0x2f28 : nop
+0x2f2a : movw r1, #158 ; 0x9e
+0x2f2e : movt r1, #0 ; 0x0
+0x2f32 : add r1, pc
+(gdb) continue
+Continuing.
+Try to attach to me!.........

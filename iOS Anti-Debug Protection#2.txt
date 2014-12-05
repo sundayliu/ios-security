@@ -1,0 +1,68 @@
+int sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
+
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/sysctl.h>
+#include <stdlib.h>
+  
+static int is_debugger_present(void)
+{
+    int name[4];
+    struct kinfo_proc info;
+    size_t info_size = sizeof(info);
+  
+    info.kp_proc.p_flag = 0;
+  
+    name[0] = CTL_KERN;
+    name[1] = KERN_PROC;
+    name[2] = KERN_PROC_PID;
+    name[3] = getpid();
+  
+    if (sysctl(name, 4, &info, &info_size, NULL, 0) == -1) {
+        perror("sysctl");
+        exit(-1);
+    }
+    return ((info.kp_proc.p_flag & P_TRACED) != 0);
+}
+  
+int main (int argc, const char * argv[])
+{
+    printf("Looping forever");
+    fflush(stdout);
+    while (1)
+    {
+        sleep(1);
+        if (is_debugger_present())
+        {
+            printf("Debugger detected! Terminating...\n");
+            return -1;
+        }
+        printf(".");
+        fflush(stdout);
+    }
+    return 0;
+}
+
+Bypassing the sysctl check
+
+tl0gic:~ mobile$ gdb ./sysctl
+Reading symbols for shared libraries . done
+(gdb)
+
+(gdb) break sysctl if $r1==4 && *(int *)$r0==1 && *(int *)($r0+4)==14 && *(int *)($r0+8)==1
+
+
+(gdb) run
+Starting program: /private/var/mobile/sysctl
+Reading symbols for shared libraries ...................... done
+Looping forever
+Breakpoint 1, 0x35b60672 in sysctl ()
+(gdb)
+
+https://linuxtoy.org/archives/game_emulator_for_linux.html
+http://llvm.org/docs/ProgrammersManual.html
+http://adrianboeing.blogspot.com/2009/05/llvm-for-beginners-windows.html
+http://www.lingcc.com/2011/12/08/11882/
+http://fuzion24.github.io/android/obfuscation/ndk/llvm/o-llvm/2014/07/27/android-obfuscation-o-llvm-ndk/
